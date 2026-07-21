@@ -1,0 +1,13 @@
+{
+  "name": "accel-mikrotik-bridge",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "hono": "^4.12.31"
+  }
+}
