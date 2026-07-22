@@ -47,11 +47,16 @@ function parseAccelUptimeToMikrotik(accelUptime: string): string {
   return partsList.join('');
 }
 
-async function getActiveSessionsJson(): Promise<MikrotikActiveSession[]> {
+async function getActiveSessionsForInstance(port?: string): Promise<MikrotikActiveSession[]> {
   try {
     const cmd = process.env.ACCEL_CMD || 'accel-cmd';
     const argsStr = process.env.ACCEL_ARGS || 'show sessions ifname,username,ip,uptime';
-    const proc = Bun.spawn([cmd, ...argsStr.split(' ')]);
+    const args = argsStr.split(' ');
+    
+    // Jika ada port, sisipkan flag -p <port>
+    const spawnArgs = port ? [cmd, '-p', port, ...args] : [cmd, ...args];
+    
+    const proc = Bun.spawn(spawnArgs);
     const rawOutput = await new Response(proc.stdout).text();
 
     const lines = rawOutput
@@ -77,13 +82,36 @@ async function getActiveSessionsJson(): Promise<MikrotikActiveSession[]> {
 
     return sessions;
   } catch (error) {
-    console.error('Error executing accel-cmd:', error);
-    return [];
+    console.error(`Error executing accel-cmd for port ${port || 'default'}:`, error);
+    return []; // Return kosong agar tidak merusak gabungan data jika 1 instance error
   }
 }
 
+async function getAllActiveSessionsJson(): Promise<MikrotikActiveSession[]> {
+  const instancesEnv = process.env.ACCEL_INSTANCES;
+  
+  // Jika ACCEL_INSTANCES tidak disetel, gunakan perilaku bawaan
+  if (!instancesEnv) {
+    return await getActiveSessionsForInstance();
+  }
+
+  const ports = instancesEnv.split(',').map((p) => p.trim()).filter(Boolean);
+  
+  // Jika kosong setelah di-split, gunakan perilaku bawaan
+  if (ports.length === 0) {
+    return await getActiveSessionsForInstance();
+  }
+
+  // Tarik data dari semua instance secara paralel
+  const promises = ports.map((port) => getActiveSessionsForInstance(port));
+  const results = await Promise.all(promises);
+  
+  // Gabungkan (flatten) array of arrays menjadi satu array
+  return results.flat();
+}
+
 app.get('/rest/ppp/active', async (c) => {
-  const sessions = await getActiveSessionsJson();
+  const sessions = await getAllActiveSessionsJson();
   return c.json(sessions);
 });
 
